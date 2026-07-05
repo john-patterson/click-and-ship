@@ -7,16 +7,10 @@ import {
   SPRINT_DURATION_MS,
 } from './constants'
 import { resolveBeat } from './events'
-import type { GameState, Specialization } from './save/schema'
+import { specializationLabel } from './labels'
+import type { GameState } from './save/schema'
 import { resolveSprintEnd } from './sprint'
 import { appendLog, updateSubtask } from './state-helpers'
-
-const specializationLabel: Record<Specialization, string> = {
-  product: 'Product',
-  design: 'Design',
-  fe: 'Frontend',
-  be: 'Backend',
-}
 
 // Called on an interval with the elapsed time (ms) since the last tick.
 // Player actions (assigning devs, spending manager time, click-hold

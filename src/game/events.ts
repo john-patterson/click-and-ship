@@ -4,16 +4,10 @@ import {
   JUNIOR_BLOCK_CHANCE_PER_BEAT,
   SENIOR_PROPOSAL_CHANCE_PER_BEAT,
 } from './constants'
+import { specializationLabel } from './labels'
 import { nextRandom } from './rng'
 import type { GameState, PendingEvent } from './save/schema'
 import { appendLog, updateSubtask, updateTeamMember } from './state-helpers'
-
-const specializationLabel: Record<string, string> = {
-  product: 'product',
-  design: 'design',
-  fe: 'frontend',
-  be: 'backend',
-}
 
 // Rolled once per 30s "beat" (4 per sprint). The same fixed slots are rolled
 // every beat regardless of eligibility (junior-1, junior-2, senior, incident)
@@ -37,12 +31,9 @@ function rollJuniorBlocked(state: GameState, devId: string): GameState {
   if (!eligible || roll >= JUNIOR_BLOCK_CHANCE_PER_BEAT) return next
 
   const subtask = next.project.subtasks.find((t) => t.id === dev.assignedSubtaskId)
+  const label = subtask ? specializationLabel[subtask.specialization].toLowerCase() : 'their task'
   const blocked = updateTeamMember(next, devId, { blocked: true, unblockHoldProgress: 0 })
-  return appendLog(
-    blocked,
-    `${dev.name} is stuck on ${specializationLabel[subtask?.specialization ?? ''] ?? 'their task'} and needs help.`,
-    'warning',
-  )
+  return appendLog(blocked, `${dev.name} is stuck on ${label} and needs help.`, 'warning')
 }
 
 function rollSeniorProposal(state: GameState): GameState {
@@ -64,7 +55,7 @@ function rollSeniorProposal(state: GameState): GameState {
   }
   return appendLog(
     { ...next, pendingEvent },
-    `${senior.name} proposes a quick refactor on ${specializationLabel[subtask.specialization]}.`,
+    `${senior.name} proposes a quick refactor on ${specializationLabel[subtask.specialization].toLowerCase()}.`,
     'info',
   )
 }
@@ -90,7 +81,7 @@ function rollIncident(state: GameState): GameState {
   }
   return appendLog(
     withCount,
-    `Incident: a bug surfaced in ${specializationLabel[target.specialization]}, setting progress back.`,
+    `Incident: a bug surfaced in ${specializationLabel[target.specialization].toLowerCase()}, setting progress back.`,
     'danger',
   )
 }
