@@ -2,10 +2,17 @@ import { useEffect } from 'react'
 import { startGameLoop } from './game/loop'
 import { loadGame, startAutosave } from './game/save/autosave'
 import { useGameStore } from './game/store'
+import { EventLog } from './ui/EventLog'
+import { PendingEventBanner } from './ui/PendingEventBanner'
+import { ProjectPanel } from './ui/ProjectPanel'
+import { QuarterReviewModal } from './ui/QuarterReviewModal'
 import { SettingsPanel } from './ui/SettingsPanel'
+import { SprintControls } from './ui/SprintControls'
+import { TeamPanel } from './ui/TeamPanel'
 
 function App() {
-  const state = useGameStore()
+  const phase = useGameStore((s) => s.phase)
+  const runNumber = useGameStore((s) => s.runNumber)
 
   useEffect(() => {
     void loadGame()
@@ -18,13 +25,17 @@ function App() {
   }, [])
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-2xl flex-col items-center justify-center gap-10 px-4 py-12 text-center">
-      <h1 className="text-3xl font-semibold">SWE Manager</h1>
-      {/* Temporary debug dump until the real UI (TeamPanel/ProjectPanel/etc.) lands. */}
-      <pre className="w-full overflow-auto rounded border border-neutral-300 p-2 text-left text-xs dark:border-neutral-700">
-        {JSON.stringify(state, null, 2)}
-      </pre>
+    <main className="mx-auto flex min-h-svh max-w-2xl flex-col items-center gap-6 px-4 py-8">
+      <h1 className="text-2xl font-semibold">SWE Manager — Run #{runNumber}</h1>
+      <SprintControls />
+      <PendingEventBanner />
+      <div className="grid w-full max-w-md gap-4 md:max-w-none md:grid-cols-2">
+        <TeamPanel />
+        <ProjectPanel />
+      </div>
+      <EventLog />
       <SettingsPanel />
+      {phase !== 'active' && <QuarterReviewModal />}
     </main>
   )
 }
