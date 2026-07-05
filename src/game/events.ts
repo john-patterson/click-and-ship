@@ -14,3 +14,12 @@ export function rollSprintEvent(seed: number): [SprintEventId, number] {
 export function effectiveTimeBudget(event: SprintEventId | null): number {
   return MANAGER_TIME_BUDGET - (event === 'ceo' ? CEO_EVENT_BUDGET_PENALTY : 0)
 }
+
+// Hours left for activities after event penalties and one-off commitments
+// (hires, accepted refactors, promo case prep).
+export function availableHours(state: {
+  currentEvent: SprintEventId | null
+  committedHours: number
+}): number {
+  return effectiveTimeBudget(state.currentEvent) - state.committedHours
+}

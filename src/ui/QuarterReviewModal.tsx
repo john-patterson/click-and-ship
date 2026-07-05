@@ -8,7 +8,7 @@ const OUTCOME_MESSAGES: Record<QuarterOutcome, string | null> = {
   'pip-lifted': 'You clawed your way off the PIP. Back to normal next quarter.',
   fired: 'A grade like that while on a PIP only ends one way.',
   promoted: 'You hit the promotion bar!',
-  capped: '24 quarters at the same level. HR gently suggests retirement.',
+  capped: '24 quarters at the same level. HR schedules your retirement party.',
 }
 
 export function QuarterReviewModal() {
@@ -17,9 +17,13 @@ export function QuarterReviewModal() {
 
   if (!result) return null
 
-  const runEnds =
-    result.outcome === 'fired' || result.outcome === 'promoted' || result.outcome === 'capped'
   const message = OUTCOME_MESSAGES[result.outcome]
+  const buttonLabel =
+    result.outcome === 'fired' || result.outcome === 'capped'
+      ? 'See run summary'
+      : result.outcome === 'promoted'
+        ? 'To the ceremony'
+        : `Start Quarter ${result.quarter + 1}`
 
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4">
@@ -62,7 +66,7 @@ export function QuarterReviewModal() {
           onClick={endQuarter}
           className="rounded bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
         >
-          {runEnds ? 'See run summary' : `Start Quarter ${result.quarter + 1}`}
+          {buttonLabel}
         </button>
       </div>
     </div>

@@ -1,17 +1,19 @@
 import { ACTIVITIES } from '../game/constants'
-import { effectiveTimeBudget } from '../game/events'
+import { availableHours } from '../game/events'
 import { useGameStore } from '../game/store'
-import { selectedActivityCost } from '../game/sprint'
+import { activityCost, selectedActivityCost } from '../game/team'
 
 export function SprintPlanner() {
   const selectedActivities = useGameStore((s) => s.selectedActivities)
   const currentEvent = useGameStore((s) => s.currentEvent)
+  const committedHours = useGameStore((s) => s.committedHours)
+  const reports = useGameStore((s) => s.reports)
   const sprint = useGameStore((s) => s.sprint)
   const toggleActivity = useGameStore((s) => s.toggleActivity)
   const runSprint = useGameStore((s) => s.runSprint)
 
-  const budget = effectiveTimeBudget(currentEvent)
-  const used = selectedActivityCost(selectedActivities)
+  const budget = availableHours({ currentEvent, committedHours })
+  const used = selectedActivityCost(selectedActivities, reports)
 
   return (
     <div className="flex w-full flex-col gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
@@ -21,20 +23,24 @@ export function SprintPlanner() {
         </h2>
         <span className="text-sm tabular-nums">
           {used}/{budget}h
+          {committedHours > 0 && (
+            <span className="text-xs text-neutral-500"> (+{committedHours}h committed)</span>
+          )}
         </span>
       </div>
 
       <div className="h-2 w-full overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
         <div
           className="h-full bg-sky-500 transition-[width]"
-          style={{ width: `${budget === 0 ? 0 : (used / budget) * 100}%` }}
+          style={{ width: `${budget <= 0 ? 100 : Math.min(100, (used / budget) * 100)}%` }}
         />
       </div>
 
       <ul className="flex flex-col gap-1.5">
         {ACTIVITIES.map((activity) => {
+          const cost = activityCost(activity.id, reports)
           const selected = selectedActivities.includes(activity.id)
-          const fits = selected || used + activity.cost <= budget
+          const fits = selected || used + cost <= budget
           return (
             <li key={activity.id}>
               <button
@@ -51,7 +57,7 @@ export function SprintPlanner() {
                 <span className="flex flex-col">
                   <span className="font-medium">
                     {activity.label}{' '}
-                    <span className="font-normal text-neutral-500">({activity.cost}h)</span>
+                    <span className="font-normal text-neutral-500">({cost}h)</span>
                   </span>
                   <span className="text-xs text-neutral-500">
                     {selected ? activity.selectedHint : `Skipped: ${activity.skippedHint}`}

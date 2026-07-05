@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyQuarterOutcome, computeQuarterResult } from './quarter'
+import { applyQuarterOutcome, computeQuarterResult, finishQuarter } from './quarter'
 import { createInitialGameState, type GameState } from './save/schema'
 
 // Builds a state as it looks right after sprint 6 resolves, just before
@@ -205,16 +205,109 @@ describe('applyQuarterOutcome', () => {
     expect(next.gradeHistory).toEqual(['C'])
   })
 
-  it('promotion ends the run with the points booked', () => {
+  it('promotion opens the ceremony with the points booked', () => {
     const next = applyQuarterOutcome(reviewedState({ quarterSp: 130, careerPoints: 4 }))
-    expect(next.phase).toBe('run-over')
-    expect(next.runOverReason).toBe('promoted')
+    expect(next.phase).toBe('ceremony')
     expect(next.careerPoints).toBe(6)
   })
 
-  it('the Q24 cap ends the run', () => {
+  it('the Q24 cap forces retirement with the peak tier banked', () => {
     const next = applyQuarterOutcome(reviewedState({ quarter: 24 }))
     expect(next.phase).toBe('run-over')
     expect(next.runOverReason).toBe('capped')
+    expect(next.metaProgression.peakTier).toBe('IC')
+  })
+
+  it('routes through promotion decisions when a report is eligible', () => {
+    const base = quarterEndState()
+    const eligible = {
+      ...base,
+      reports: base.reports.map((r) =>
+        r.id === 'alice'
+          ? {
+              ...r,
+              ratingHistory: [
+                { quarter: 1, rating: 'EE' as const },
+                { quarter: 2, rating: 'EE' as const },
+              ],
+            }
+          : r,
+      ),
+    }
+    const next = applyQuarterOutcome({
+      ...eligible,
+      phase: 'quarter-review',
+      lastQuarterResult: computeQuarterResult(eligible),
+    })
+    expect(next.phase).toBe('promotions')
+    expect(next.promotionQueue).toEqual(['alice'])
+  })
+})
+
+describe('finishQuarter', () => {
+  it('auto-fires reports with two consecutive NIs at the start of the next quarter', () => {
+    const base = quarterEndState()
+    const state: GameState = {
+      ...base,
+      reports: base.reports.map((r) =>
+        r.id === 'bob' ? { ...r, consecutiveNI: 2, onSoftPIP: true } : r,
+      ),
+      phase: 'quarter-review',
+      lastQuarterResult: computeQuarterResult(base),
+    }
+
+    const next = finishQuarter(state)
+
+    expect(next.quarter).toBe(2)
+    expect(next.reports.map((r) => r.id)).toEqual(['alice', 'carol', 'dave'])
+    // Team morale takes the -8 auto-fire hit.
+    expect(next.morale).toBe(state.morale - 8)
+    expect(next.notices.some((n) => n.includes('Bob'))).toBe(true)
+  })
+
+  it('books promo prep hours against the new quarter\'s first sprint', () => {
+    const base = quarterEndState()
+    const state: GameState = {
+      ...base,
+      pendingCommittedHours: 4,
+      phase: 'quarter-review',
+      lastQuarterResult: computeQuarterResult(base),
+    }
+    const next = finishQuarter(state)
+    expect(next.committedHours).toBe(4)
+    expect(next.pendingCommittedHours).toBe(0)
+  })
+
+  it('applies quarter-cadence traits: team player morale and fast-learner SP', () => {
+    const base = quarterEndState()
+    const state: GameState = {
+      ...base,
+      reports: base.reports.map((r) =>
+        r.id === 'dave'
+          ? { ...r, hiddenTraits: ['team-player' as const, 'fast-learner' as const] }
+          : r,
+      ),
+      phase: 'quarter-review',
+      lastQuarterResult: computeQuarterResult(base),
+    }
+
+    const next = finishQuarter(state)
+
+    expect(next.morale).toBe(state.morale + 2)
+    expect(next.reports.find((r) => r.id === 'dave')?.baseSp).toBe(8)
+  })
+
+  it('caps fast-learner growth at role max +3', () => {
+    const base = quarterEndState()
+    const state: GameState = {
+      ...base,
+      reports: base.reports.map((r) =>
+        r.id === 'dave' ? { ...r, baseSp: 10, hiddenTraits: ['fast-learner' as const] } : r,
+      ),
+      phase: 'quarter-review',
+      lastQuarterResult: computeQuarterResult(base),
+    }
+    const next = finishQuarter(state)
+    expect(next.reports.find((r) => r.id === 'dave')?.baseSp).toBe(10)
   })
 })

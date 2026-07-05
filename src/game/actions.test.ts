@@ -26,14 +26,14 @@ describe('toggleActivity', () => {
       'triage',
     ]
     const state = baseState({ selectedActivities: fullPlan })
-    expect(selectedActivityCost(fullPlan)).toBe(40)
+    expect(selectedActivityCost(fullPlan, state.reports)).toBe(40)
     expect(toggleActivity(state, 'interview')).toBe(state)
   })
 
   it('shrinks the budget by 8h under a CEO-demo event', () => {
     // 36h selected; adding 8h fits 40h but not 32h.
     const plan: ActivityId[] = ['planning', 'ones', 'reviews', 'unblock', 'design', 'triage', 'interview']
-    expect(selectedActivityCost(plan)).toBe(36)
+    expect(selectedActivityCost(plan, baseState().reports)).toBe(36)
     const calm = baseState({ sprint: 2, selectedActivities: plan.slice(0, -1) })
     const demo = { ...calm, currentEvent: 'ceo' as const }
     expect(toggleActivity(calm, 'interview').selectedActivities).toContain('interview')
@@ -65,5 +65,17 @@ describe('restartRun', () => {
     expect(next.runNumber).toBe(3)
     expect(next.quarter).toBe(1)
     expect(next.phase).toBe('planning')
+  })
+
+  it('keeps meta-progression across careers, bumping the career count', () => {
+    const ended = baseState({
+      phase: 'run-over',
+      runNumber: 2,
+      metaProgression: { peakTier: 'MoM', careerCount: 2 },
+    })
+    const next = restartRun(ended)
+    expect(next.metaProgression).toEqual({ peakTier: 'MoM', careerCount: 3 })
+    expect(next.politicalCapital).toBe(3)
+    expect(next.tier).toBe('IC')
   })
 })
