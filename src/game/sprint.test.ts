@@ -19,6 +19,9 @@ function baseState(overrides: Partial<GameState> = {}): GameState {
   return { ...createInitialGameState(1, 42), ...overrides }
 }
 
+// The default roster carries no extra salary hours, so costs match Phase 1.
+const REPORTS = createInitialGameState(1, 42).reports
+
 // Replays the two in-sprint RNG calls (incident roll, then morale jitter) so
 // tests can compute expected values without duplicating game logic.
 function sprintRolls(seed: number) {
@@ -29,9 +32,15 @@ function sprintRolls(seed: number) {
 
 describe('selectedActivityCost', () => {
   it('sums activity hour costs', () => {
-    expect(selectedActivityCost([])).toBe(0)
-    expect(selectedActivityCost(['planning', 'ones'])).toBe(12)
-    expect(selectedActivityCost(FULL_PLAN)).toBe(40)
+    expect(selectedActivityCost([], REPORTS)).toBe(0)
+    expect(selectedActivityCost(['planning', 'ones'], REPORTS)).toBe(12)
+    expect(selectedActivityCost(FULL_PLAN, REPORTS)).toBe(40)
+  })
+
+  it('adds report salary hours to the 1:1 cost', () => {
+    const raised = REPORTS.map((r, i) => (i === 0 ? { ...r, salaryHours: 2 } : r))
+    expect(selectedActivityCost(['ones'], raised)).toBe(10)
+    expect(selectedActivityCost(['planning'], raised)).toBe(4)
   })
 })
 
@@ -164,15 +173,24 @@ describe('resolveSprint', () => {
     }
   })
 
-  it('enters quarter review after sprint 6', () => {
+  it('enters the rating stage after sprint 6', () => {
     const next = resolveSprint(
       baseState({ sprint: 6, quarterSp: 90, selectedActivities: FULL_PLAN }),
     )
 
-    expect(next.phase).toBe('quarter-review')
+    // The boss review is graded only after the player rates the team, so no
+    // quarter result exists yet.
+    expect(next.phase).toBe('rating')
     expect(next.currentEvent).toBeNull()
+    expect(next.lastQuarterResult).toBeNull()
+  })
+
+  it('skips the rating stage after sprint 6 when the roster is empty', () => {
+    const next = resolveSprint(
+      baseState({ sprint: 6, quarterSp: 90, reports: [], selectedActivities: [] }),
+    )
+
+    expect(next.phase).toBe('quarter-review')
     expect(next.lastQuarterResult).not.toBeNull()
-    expect(next.lastQuarterResult?.quarter).toBe(1)
-    expect(next.lastQuarterResult?.totalSp).toBe(90 + next.sprintHistory[0].sp)
   })
 })

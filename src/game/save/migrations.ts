@@ -1,5 +1,11 @@
 import { createRngSeed } from '../rng'
-import { createInitialGameState, CURRENT_SAVE_VERSION, type SaveFile } from './schema'
+import {
+  createInitialGameState,
+  createStartingReports,
+  CURRENT_SAVE_VERSION,
+  type GameState,
+  type SaveFile,
+} from './schema'
 
 // Old save shapes are frozen here, not in schema.ts, since schema.ts only
 // needs to describe the current version. Each interface declares just the
@@ -17,6 +23,16 @@ interface SaveFileV1 {
 interface SaveFileV2 {
   version: 2
   state: { rngSeed?: number; runNumber?: number }
+  lastSaveTimestamp: number
+}
+
+// v3: the first turn-based schema, before reports/candidates lived in save
+// state. Its state is the v4 GameState minus every Phase 2 field; the v3->v4
+// step only spreads it and adds defaults, so 'morale' and 'runNumber' are the
+// only fields it reads by name.
+interface SaveFileV3 {
+  version: 3
+  state: { morale: number; runNumber: number } & Record<string, unknown>
   lastSaveTimestamp: number
 }
 
@@ -41,6 +57,30 @@ const migrationSteps: Record<number, (save: never) => unknown> = {
     state: {
       ...createInitialGameState(save.state.runNumber ?? 1, save.state.rngSeed ?? createRngSeed()),
     },
+    lastSaveTimestamp: save.lastSaveTimestamp,
+  }),
+  3: (save: SaveFileV3) => ({
+    version: 4,
+    // Phase 2 moves the roster into save state and adds recruiting, reviews
+    // and career-meta fields. A v3 save keeps its run in place; the fixed
+    // Phase 1 roster becomes the report list, everyone at team morale.
+    state: {
+      ...save.state,
+      tier: 'IC',
+      politicalCapital: 3,
+      reports: createStartingReports(save.state.morale),
+      candidatePool: [],
+      committedHours: 0,
+      pendingCommittedHours: 0,
+      pendingRefactor: null,
+      calibrationEvent: null,
+      promotionQueue: [],
+      legacyPicks: [],
+      reputationBoost: false,
+      allyReportId: null,
+      metaProgression: { peakTier: 'IC', careerCount: save.state.runNumber },
+      notices: [],
+    } as unknown as GameState,
     lastSaveTimestamp: save.lastSaveTimestamp,
   }),
 }

@@ -1,4 +1,9 @@
-import { MAX_QUARTERS, PROMOTION_POINTS_REQUIRED, SPRINTS_PER_QUARTER } from '../game/constants'
+import {
+  MAX_QUARTERS,
+  PROMOTION_POINTS_REQUIRED,
+  SPRINTS_PER_QUARTER,
+  TIER_TITLES,
+} from '../game/constants'
 import { useGameStore } from '../game/store'
 
 function moraleColor(morale: number): string {
@@ -22,12 +27,15 @@ export function StatsHeader() {
   const quarterSp = useGameStore((s) => s.quarterSp)
   const quarterIncidents = useGameStore((s) => s.quarterIncidents)
   const onPip = useGameStore((s) => s.onPip)
+  const tier = useGameStore((s) => s.tier)
+  const politicalCapital = useGameStore((s) => s.politicalCapital)
 
   return (
     <div className="flex w-full flex-col gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">
-          Quarter {quarter}/{MAX_QUARTERS} — Sprint {sprint}/{SPRINTS_PER_QUARTER}
+          {TIER_TITLES[tier]} — Quarter {quarter}/{MAX_QUARTERS}, Sprint {sprint}/
+          {SPRINTS_PER_QUARTER}
         </span>
         <div className="flex items-center gap-2">
           {onPip && (
@@ -35,6 +43,9 @@ export function StatsHeader() {
               On PIP
             </span>
           )}
+          <span className="text-sm text-neutral-500" title="Political capital">
+            ⚖ {politicalCapital}
+          </span>
           <span className="text-sm text-neutral-500">
             Career: {careerPoints}/{PROMOTION_POINTS_REQUIRED} pts
           </span>

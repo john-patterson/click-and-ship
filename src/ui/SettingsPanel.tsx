@@ -1,10 +1,19 @@
 import { useState } from 'react'
+import { TIER_ORDER } from '../game/constants'
 import { exportSaveBase64, importSaveBase64 } from '../game/save/autosave'
+import { useGameStore } from '../game/store'
 
 export function SettingsPanel() {
   const [exportedSave, setExportedSave] = useState('')
   const [importText, setImportText] = useState('')
   const [status, setStatus] = useState<string | null>(null)
+  const tier = useGameStore((s) => s.tier)
+  const phase = useGameStore((s) => s.phase)
+  const retire = useGameStore((s) => s.retire)
+
+  // Voluntary retirement unlocks at VP tier or higher.
+  const canRetire =
+    phase !== 'run-over' && TIER_ORDER.indexOf(tier) >= TIER_ORDER.indexOf('VP')
 
   const handleExport = async () => {
     setExportedSave(await exportSaveBase64())
@@ -61,6 +70,16 @@ export function SettingsPanel() {
         </button>
         {status && <p className="text-xs text-neutral-500">{status}</p>}
       </div>
+
+      {canRetire && (
+        <button
+          type="button"
+          onClick={retire}
+          className="self-start rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          Retire (end the run)
+        </button>
+      )}
     </div>
   )
 }
