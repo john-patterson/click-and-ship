@@ -1,65 +1,63 @@
 import { create } from 'zustand'
-import {
-  acknowledgeQuarterReview,
-  assignDev,
-  assignManagerFill,
-  holdUnblockTick,
-  releaseUnblockHold,
-  respondToEvent,
-  restartRun,
-} from './actions'
-import { createInitialGameState, type GameState } from './save/schema'
-import { tick } from './tick'
+import { logAction } from './actionBuffer'
+import { endQuarter, restartRun, runSprint, toggleActivity } from './actions'
+import { createInitialGameState, type ActivityId, type GameState } from './save/schema'
+
+// Thin Zustand bridge: every mutation goes through a named action (logged to
+// the in-memory action buffer) and a pure reducer from src/game/.
 
 interface GameStore extends GameState {
   hydrate: (state: GameState) => void
-  advanceTick: (deltaMs: number) => void
-  assignDev: (devId: string, subtaskId: string | null) => void
-  assignManagerFill: (subtaskId: string) => void
-  holdUnblockTick: (devId: string, deltaMs: number) => void
-  releaseUnblockHold: (devId: string) => void
-  respondToEvent: (choice: 'approve' | 'deny') => void
-  acknowledgeQuarterReview: () => void
+  toggleActivity: (activityId: ActivityId) => void
+  runSprint: () => void
+  endQuarter: () => void
   restartRun: () => void
 }
 
-// Only the GameState-shaped fields, never the action closures above - keeps
-// the pure src/game/ functions (tick, actions) operating on plain,
-// JSON-serializable state, and is what gets persisted to a save file.
+// Only the GameState-shaped fields, never the action closures above — keeps
+// the pure src/game/ reducers operating on plain, JSON-serializable state,
+// and is what gets persisted to a save file.
 function extractGameState(store: GameStore): GameState {
   return {
-    team: store.team,
-    project: store.project,
-    managerTimeBudget: store.managerTimeBudget,
-    managerTimeBudgetMax: store.managerTimeBudgetMax,
-    sprint: store.sprint,
     quarter: store.quarter,
-    sprintElapsedMs: store.sprintElapsedMs,
-    eventLog: store.eventLog,
-    pendingEvent: store.pendingEvent,
+    sprint: store.sprint,
+    morale: store.morale,
+    techDebt: store.techDebt,
+    careerPoints: store.careerPoints,
+    selectedActivities: store.selectedActivities,
+    currentEvent: store.currentEvent,
+    quarterSp: store.quarterSp,
+    quarterIncidents: store.quarterIncidents,
+    sprintHistory: store.sprintHistory,
+    lastQuarterResult: store.lastQuarterResult,
+    onPip: store.onPip,
+    consecutiveDs: store.consecutiveDs,
+    gradeHistory: store.gradeHistory,
+    totalSpRun: store.totalSpRun,
     rngSeed: store.rngSeed,
     phase: store.phase,
-    lastQuarterResult: store.lastQuarterResult,
+    runOverReason: store.runOverReason,
     runNumber: store.runNumber,
-    subtasksCompletedThisQuarter: store.subtasksCompletedThisQuarter,
-    incidentsThisQuarter: store.incidentsThisQuarter,
-    managerFillSpendThisQuarter: store.managerFillSpendThisQuarter,
   }
 }
 
-export const useGameStore = create<GameStore>((set) => ({
-  ...createInitialGameState(),
-  hydrate: (state) => set(state),
-  advanceTick: (deltaMs) => set((s) => tick(extractGameState(s), deltaMs)),
-  assignDev: (devId, subtaskId) => set((s) => assignDev(extractGameState(s), devId, subtaskId)),
-  assignManagerFill: (subtaskId) => set((s) => assignManagerFill(extractGameState(s), subtaskId)),
-  holdUnblockTick: (devId, deltaMs) =>
-    set((s) => holdUnblockTick(extractGameState(s), devId, deltaMs)),
-  releaseUnblockHold: (devId) => set((s) => releaseUnblockHold(extractGameState(s), devId)),
-  respondToEvent: (choice) => set((s) => respondToEvent(extractGameState(s), choice)),
-  acknowledgeQuarterReview: () => set((s) => acknowledgeQuarterReview(extractGameState(s))),
-  restartRun: () => set((s) => restartRun(extractGameState(s))),
-}))
+export const useGameStore = create<GameStore>((set) => {
+  const dispatch = (action: string, reducer: (state: GameState) => GameState, payload?: unknown) =>
+    set((store) => {
+      logAction(action, payload)
+      return reducer(extractGameState(store))
+    })
+
+  return {
+    ...createInitialGameState(),
+    hydrate: (state) => dispatch('save:hydrate', () => state),
+    toggleActivity: (activityId) =>
+      dispatch('sprint:allocate', (s) => toggleActivity(s, activityId), { activityId }),
+    runSprint: () => dispatch('sprint:run', runSprint),
+    endQuarter: () => dispatch('quarter:end', endQuarter),
+    restartRun: () => dispatch('run:restart', restartRun),
+  }
+})
 
 export function getGameState(): GameState {
   return extractGameState(useGameStore.getState())

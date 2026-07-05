@@ -1,143 +1,119 @@
-export const CURRENT_SAVE_VERSION = 2
+export const CURRENT_SAVE_VERSION = 3
 
-export type Specialization = 'product' | 'design' | 'fe' | 'be'
-export type DevArchetype = 'junior' | 'senior'
-export type RunPhase = 'active' | 'quarter-review' | 'game-over'
-export type EventLogKind = 'info' | 'warning' | 'success' | 'danger'
-export type PendingEventType = 'senior-refactor-proposal'
+export type ActivityId =
+  | 'planning'
+  | 'ones'
+  | 'reviews'
+  | 'unblock'
+  | 'product'
+  | 'design'
+  | 'triage'
+  | 'interview'
+  | 'debtwork'
 
-export interface TeamMember {
-  id: string
-  name: string
-  archetype: DevArchetype
-  assignedSubtaskId: string | null
-  blocked: boolean
-  unblockHoldProgress: number // 0..1, only meaningful while blocked
-}
+export type SprintEventId = 'ceo' | 'sick' | 'storm' | 'offsite' | 'kudos'
 
-export interface SubTask {
-  id: string
-  specialization: Specialization
-  progress: number // 0..100
-  done: boolean
-  managerFilling: boolean
-}
+export type Grade = 'F' | 'D' | 'C' | 'B' | 'A' | 'S'
 
-export interface Project {
-  id: string
-  name: string
-  subtasks: SubTask[] // always exactly one per Specialization
-}
+export type RunPhase = 'planning' | 'quarter-review' | 'run-over'
 
-export interface EventLogEntry {
-  id: string
+export type RunOverReason = 'promoted' | 'fired' | 'capped'
+
+// What happens after a quarter review is acknowledged. 'warning' is a plain
+// continue with a "shape up" message (single D outside PIP).
+export type QuarterOutcome =
+  | 'continue'
+  | 'warning'
+  | 'pip-start'
+  | 'pip-lifted'
+  | 'fired'
+  | 'promoted'
+  | 'capped'
+
+// The full breakdown of one resolved sprint, kept for the results panel and
+// the quarter-review screen.
+export interface SprintResult {
   quarter: number
   sprint: number
-  message: string
-  kind: EventLogKind
-}
-
-export interface PendingEvent {
-  id: string
-  type: PendingEventType
-  subtaskId: string
-}
-
-export interface QuarterReviewResult {
-  quarter: number
-  score: number
-  grade: 'A' | 'B' | 'C' | 'D' | 'F'
-  passed: boolean
-  subtasksCompleted: number
+  event: SprintEventId | null
+  activities: ActivityId[]
+  sp: number
   incidents: number
-  managerFillSpend: number
+  incidentSpCost: number
+  moraleDelta: number
+  techDebtDelta: number
+  moraleAfter: number
+  techDebtAfter: number
+}
+
+export interface QuarterResult {
+  quarter: number
+  totalSp: number
+  incidents: number
+  endMorale: number
+  endTechDebt: number
+  score: number
+  grade: Grade
+  // Human-readable score breakdown lines, e.g. "Total SP 112 (>=105): +1".
+  reasons: string[]
+  // Points from the grade table; 0 if the quarter was under PIP.
+  pointsEarned: number
+  careerPointsAfter: number
+  onPipDuringQuarter: boolean
+  outcome: QuarterOutcome
 }
 
 export interface GameState {
-  team: TeamMember[]
-  project: Project
-  managerTimeBudget: number
-  managerTimeBudgetMax: number
-  sprint: number
-  quarter: number
-  sprintElapsedMs: number
-  eventLog: EventLogEntry[]
-  pendingEvent: PendingEvent | null
+  quarter: number // 1-based, hard-capped at Q24
+  sprint: number // 1..6 within the quarter
+  morale: number // 0..100
+  techDebt: number // 0..100
+  careerPoints: number
+  selectedActivities: ActivityId[]
+  currentEvent: SprintEventId | null // rolled at the start of sprints 2-6
+  quarterSp: number
+  quarterIncidents: number
+  sprintHistory: SprintResult[] // resolved sprints of the current quarter
+  lastQuarterResult: QuarterResult | null
+  onPip: boolean
+  consecutiveDs: number
+  gradeHistory: Grade[] // one entry per completed quarter, for run summaries
+  totalSpRun: number // cumulative SP across the whole run
   rngSeed: number
   phase: RunPhase
-  lastQuarterResult: QuarterReviewResult | null
+  runOverReason: RunOverReason | null
   runNumber: number
-  subtasksCompletedThisQuarter: number
-  incidentsThisQuarter: number
-  managerFillSpendThisQuarter: number
 }
 
-export interface SaveFileV2 {
-  version: 2
+export interface SaveFileV3 {
+  version: 3
   state: GameState
   lastSaveTimestamp: number
 }
 
-// Union this with SaveFileV3, etc. as the schema evolves.
-export type SaveFile = SaveFileV2
+// Union this with SaveFileV4, etc. as the schema evolves.
+export type SaveFile = SaveFileV3
 
-export function createInitialGameState(): GameState {
+export function createInitialGameState(runNumber = 1, rngSeed?: number): GameState {
   return {
-    team: [
-      {
-        id: 'junior-1',
-        name: 'Alex',
-        archetype: 'junior',
-        assignedSubtaskId: null,
-        blocked: false,
-        unblockHoldProgress: 0,
-      },
-      {
-        id: 'junior-2',
-        name: 'Sam',
-        archetype: 'junior',
-        assignedSubtaskId: null,
-        blocked: false,
-        unblockHoldProgress: 0,
-      },
-      {
-        id: 'senior-1',
-        name: 'Priya',
-        archetype: 'senior',
-        assignedSubtaskId: null,
-        blocked: false,
-        unblockHoldProgress: 0,
-      },
-    ],
-    project: createProject(1),
-    managerTimeBudget: 100,
-    managerTimeBudgetMax: 100,
-    sprint: 1,
     quarter: 1,
-    sprintElapsedMs: 0,
-    eventLog: [],
-    pendingEvent: null,
-    rngSeed: Date.now() >>> 0,
-    phase: 'active',
+    sprint: 1,
+    morale: 70,
+    techDebt: 20,
+    careerPoints: 0,
+    selectedActivities: [],
+    currentEvent: null, // sprint 1 never has an event
+    quarterSp: 0,
+    quarterIncidents: 0,
+    sprintHistory: [],
     lastQuarterResult: null,
-    runNumber: 1,
-    subtasksCompletedThisQuarter: 0,
-    incidentsThisQuarter: 0,
-    managerFillSpendThisQuarter: 0,
-  }
-}
-
-export function createProject(quarter: number): Project {
-  const specializations: Specialization[] = ['product', 'design', 'fe', 'be']
-  return {
-    id: `project-q${quarter}`,
-    name: `Q${quarter} Launch`,
-    subtasks: specializations.map((specialization) => ({
-      id: `subtask-${specialization}`,
-      specialization,
-      progress: 0,
-      done: false,
-      managerFilling: false,
-    })),
+    onPip: false,
+    consecutiveDs: 0,
+    gradeHistory: [],
+    totalSpRun: 0,
+    rngSeed: rngSeed ?? Date.now() >>> 0,
+    phase: 'planning',
+    runOverReason: null,
+    runNumber,
   }
 }

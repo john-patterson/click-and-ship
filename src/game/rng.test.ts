@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextRandom } from './rng'
+import { nextInt, nextRandom } from './rng'
 
 describe('nextRandom', () => {
   it('produces an identical sequence from the same seed', () => {
@@ -39,5 +39,20 @@ describe('nextRandom', () => {
       expect(value).toBeLessThan(1)
       seed = next
     }
+  })
+})
+
+describe('nextInt', () => {
+  it('stays within [min, max] inclusive and hits both ends', () => {
+    let seed = 7
+    const seen = new Set<number>()
+    for (let i = 0; i < 1000; i++) {
+      const [value, next] = nextInt(seed, -2, 2)
+      expect(value).toBeGreaterThanOrEqual(-2)
+      expect(value).toBeLessThanOrEqual(2)
+      seen.add(value)
+      seed = next
+    }
+    expect(seen).toEqual(new Set([-2, -1, 0, 1, 2]))
   })
 })

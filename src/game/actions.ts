@@ -1,111 +1,46 @@
-import {
-  MANAGER_FILL_COST,
-  SENIOR_PROPOSAL_PROGRESS_BONUS,
-  SENIOR_REFACTOR_APPROVE_COST,
-  UNBLOCK_HOLD_DURATION_MS,
-} from './constants'
-import { specializationLabel } from './labels'
-import { createInitialGameState, type GameState } from './save/schema'
-import { appendLog, updateSubtask, updateTeamMember } from './state-helpers'
+import { ACTIVITY_BY_ID } from './constants'
+import { effectiveTimeBudget } from './events'
+import { applyQuarterOutcome } from './quarter'
+import { createRngSeed } from './rng'
+import { createInitialGameState, type ActivityId, type GameState } from './save/schema'
+import { resolveSprint, selectedActivityCost } from './sprint'
 
-export function assignDev(state: GameState, devId: string, subtaskId: string | null): GameState {
-  const dev = state.team.find((m) => m.id === devId)
-  if (!dev) return state
+// Named action: 'sprint:allocate'. Toggles one activity in the sprint plan.
+// Selecting is rejected when it would blow the (event-adjusted) time budget,
+// so the plan on screen is always runnable.
+export function toggleActivity(state: GameState, activityId: ActivityId): GameState {
+  if (state.phase !== 'planning') return state
 
-  if (subtaskId !== null) {
-    const subtaskExists = state.project.subtasks.some((t) => t.id === subtaskId)
-    if (!subtaskExists) return state
-
-    const takenBySomeoneElse = state.team.some(
-      (m) => m.id !== devId && m.assignedSubtaskId === subtaskId,
-    )
-    if (takenBySomeoneElse) return state
+  if (state.selectedActivities.includes(activityId)) {
+    return {
+      ...state,
+      selectedActivities: state.selectedActivities.filter((id) => id !== activityId),
+    }
   }
 
-  return updateTeamMember(state, devId, { assignedSubtaskId: subtaskId })
+  const cost = selectedActivityCost(state.selectedActivities) + ACTIVITY_BY_ID[activityId].cost
+  if (cost > effectiveTimeBudget(state.currentEvent)) return state
+
+  return { ...state, selectedActivities: [...state.selectedActivities, activityId] }
 }
 
-export function assignManagerFill(state: GameState, subtaskId: string): GameState {
-  const subtask = state.project.subtasks.find((t) => t.id === subtaskId)
-  if (!subtask || subtask.done || subtask.managerFilling) return state
-
-  const alreadyAssigned = state.team.some((m) => m.assignedSubtaskId === subtaskId)
-  if (alreadyAssigned) return state
-
-  if (state.managerTimeBudget < MANAGER_FILL_COST) return state
-
-  const filled = updateSubtask(
-    { ...state, managerTimeBudget: state.managerTimeBudget - MANAGER_FILL_COST },
-    subtaskId,
-    { managerFilling: true },
-  )
-  return appendLog(
-    { ...filled, managerFillSpendThisQuarter: filled.managerFillSpendThisQuarter + MANAGER_FILL_COST },
-    `Manager time spent covering ${specializationLabel[subtask.specialization].toLowerCase()}.`,
-    'info',
-  )
-}
-
-export function holdUnblockTick(state: GameState, devId: string, deltaMs: number): GameState {
-  const dev = state.team.find((m) => m.id === devId)
-  if (!dev || !dev.blocked) return state
-
-  const progress = dev.unblockHoldProgress + deltaMs / UNBLOCK_HOLD_DURATION_MS
-  if (progress >= 1) {
-    return appendLog(
-      updateTeamMember(state, devId, { blocked: false, unblockHoldProgress: 0 }),
-      `${dev.name} is unblocked and back to work.`,
-      'success',
-    )
+// Named action: 'sprint:run'. Resolves the current sprint.
+export function runSprint(state: GameState): GameState {
+  if (state.phase !== 'planning') return state
+  // toggleActivity already enforces the budget; this guards imported saves.
+  if (selectedActivityCost(state.selectedActivities) > effectiveTimeBudget(state.currentEvent)) {
+    return state
   }
-
-  return updateTeamMember(state, devId, { unblockHoldProgress: progress })
+  return resolveSprint(state)
 }
 
-export function releaseUnblockHold(state: GameState, devId: string): GameState {
-  const dev = state.team.find((m) => m.id === devId)
-  if (!dev || !dev.blocked) return state
-  return updateTeamMember(state, devId, { unblockHoldProgress: 0 })
+// Named action: 'quarter:end'. Acknowledges the quarter review and applies
+// its outcome (next quarter, PIP transition, or run over).
+export function endQuarter(state: GameState): GameState {
+  return applyQuarterOutcome(state)
 }
 
-export function respondToEvent(state: GameState, choice: 'approve' | 'deny'): GameState {
-  const pending = state.pendingEvent
-  if (!pending) return state
-
-  if (choice === 'deny') {
-    return appendLog({ ...state, pendingEvent: null }, 'Deferred.', 'info')
-  }
-
-  if (state.managerTimeBudget < SENIOR_REFACTOR_APPROVE_COST) return state
-
-  const subtask = state.project.subtasks.find((t) => t.id === pending.subtaskId)
-  if (!subtask) return { ...state, pendingEvent: null }
-
-  const progress = Math.min(100, subtask.progress + SENIOR_PROPOSAL_PROGRESS_BONUS)
-  const done = progress >= 100
-
-  let next = updateSubtask(
-    { ...state, managerTimeBudget: state.managerTimeBudget - SENIOR_REFACTOR_APPROVE_COST },
-    subtask.id,
-    { progress, done },
-  )
-  next = { ...next, pendingEvent: null }
-  if (done && !subtask.done) {
-    next = { ...next, subtasksCompletedThisQuarter: next.subtasksCompletedThisQuarter + 1 }
-  }
-
-  return appendLog(
-    next,
-    `Refactor approved on ${specializationLabel[subtask.specialization].toLowerCase()}.`,
-    'success',
-  )
-}
-
-export function acknowledgeQuarterReview(state: GameState): GameState {
-  if (state.phase !== 'quarter-review') return state
-  return { ...state, phase: 'active' }
-}
-
+// Named action: 'run:restart'. Starts a fresh run with a new seed.
 export function restartRun(state: GameState): GameState {
-  return { ...createInitialGameState(), runNumber: state.runNumber + 1 }
+  return createInitialGameState(state.runNumber + 1, createRngSeed())
 }
