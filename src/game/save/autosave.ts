@@ -1,4 +1,5 @@
 import { storage } from '../../storage'
+import { OFFLINE_PROGRESS_CAP_MS } from '../constants'
 import { getGameState, useGameStore } from '../store'
 import { migrate } from './migrations'
 import { CURRENT_SAVE_VERSION, type SaveFile } from './schema'
@@ -30,8 +31,11 @@ export async function loadGame(): Promise<void> {
   lastSaveTimestamp = save.lastSaveTimestamp
   useGameStore.getState().hydrate(save.state)
 
-  // TODO: once offline progress is designed, simulate `elapsedSinceLastSave()`
-  // worth of ticks here before handing control back to the UI.
+  // Capped rather than fully simulated: at most one sprint's worth of
+  // progress resolves silently on load, so a long-absent player never comes
+  // back to a quarter (and grade) that happened invisibly.
+  const elapsed = Math.min(elapsedSinceLastSave(), OFFLINE_PROGRESS_CAP_MS)
+  useGameStore.getState().advanceTick(elapsed)
 }
 
 export function startAutosave(
