@@ -1,6 +1,8 @@
 # click-and-ship
 
-An incremental roguelike about software engineering management.
+A turn-based incremental roguelike about software engineering management.
+There are no real-time mechanics: every interaction is discrete (plan a
+sprint, run it, read the results).
 
 ## Stack
 
@@ -16,9 +18,9 @@ An incremental roguelike about software engineering management.
 ## Folder conventions
 
 - `src/game/` — pure game logic: state shape, reducers/actions, balancing
-  constants, the tick loop. **No React imports allowed here.** This code
-  should be usable from a test script or a future non-React host without
-  modification.
+  constants, sprint/quarter resolution, the deterministic RNG. **No React
+  imports allowed here.** This code should be usable from a test script or a
+  future non-React host without modification.
 - `src/game/save/` — save schema (`schema.ts`), version migrations
   (`migrations.ts`), and the autosave/export/import orchestration
   (`autosave.ts`).
@@ -41,6 +43,19 @@ An incremental roguelike about software engineering management.
   save string).
 - Saves are stored as `{ version, state, lastSaveTimestamp }`. `state` is a
   plain-old-JSON snapshot of the Zustand store, not the store itself.
+
+## Game logic rules
+
+- Every state mutation goes through a **named action** (e.g.
+  `sprint:allocate`, `sprint:run`, `quarter:end`), dispatched via the store
+  and logged to the in-memory action buffer (`src/game/actionBuffer.ts`).
+- **Deterministic RNG only**: never call `Math.random()` in game logic. Use
+  `nextRandom`/`nextInt` from `src/game/rng.ts` and thread the returned seed
+  back into state, so any save replays identically.
+- Balancing numbers in `src/game/constants.ts` and the sprint-resolution
+  formulas come from the calibrated design spec — don't change them without
+  flagging. Judgment calls not covered by the spec get a `// DESIGN NOTE:`
+  comment.
 
 ## Other conventions
 

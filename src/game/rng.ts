@@ -1,6 +1,7 @@
-// Deterministic PRNG (mulberry32) seeded from save state, so random events
-// are reproducible: replaying the same tick/deltaMs sequence from the same
-// seed always produces the same rolls.
+// Deterministic PRNG (mulberry32) seeded from save state. The seed is part
+// of GameState and every roll threads the next seed back into state, so a
+// given save always replays identically. Never call Math.random() in game
+// logic — use these helpers.
 
 export function createRngSeed(): number {
   return Date.now() >>> 0
@@ -14,4 +15,10 @@ export function nextRandom(seed: number): [number, number] {
   t = (t + Math.imul(t ^ (t >>> 7), t | 61)) ^ t
   const value = ((t ^ (t >>> 14)) >>> 0) / 4294967296
   return [value, t >>> 0]
+}
+
+// Returns [integer in [min, max] inclusive, nextSeed].
+export function nextInt(seed: number, min: number, max: number): [number, number] {
+  const [value, nextSeed] = nextRandom(seed)
+  return [min + Math.floor(value * (max - min + 1)), nextSeed]
 }

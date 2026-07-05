@@ -1,69 +1,128 @@
-import { GRADE_THRESHOLDS, SPRINTS_PER_QUARTER } from './constants'
-import { createProject, type GameState, type QuarterReviewResult } from './save/schema'
-import { appendLog } from './state-helpers'
+import { ACTIVITY_BY_ID, SPRINTS_PER_QUARTER, TEAM_BASE_SP } from './constants'
+import { effectiveTimeBudget, rollSprintEvent } from './events'
+import { computeQuarterResult } from './quarter'
+import { nextInt, nextRandom } from './rng'
+import type { ActivityId, GameState, SprintResult } from './save/schema'
 
-export function computeQuarterReview(state: GameState): QuarterReviewResult {
-  const rawScore =
-    state.subtasksCompletedThisQuarter * 25 -
-    state.incidentsThisQuarter * 10 -
-    Math.min(state.managerFillSpendThisQuarter, 100) * 0.2
-  const score = Math.max(0, Math.min(100, rawScore))
-  const grade = gradeForScore(score)
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
-  return {
+export function selectedActivityCost(activities: readonly ActivityId[]): number {
+  return activities.reduce((total, id) => total + ACTIVITY_BY_ID[id].cost, 0)
+}
+
+// Resolves the current sprint per the spec pseudocode, then advances to the
+// next sprint (rolling its event) or into quarter review after sprint 6.
+// Pure: all randomness threads through state.rngSeed. RNG call order is
+// fixed (incident roll, morale jitter, then next sprint's event roll) so a
+// given save replays identically.
+export function resolveSprint(state: GameState): GameState {
+  const selected = new Set(state.selectedActivities)
+  const event = state.currentEvent
+  let seed = state.rngSeed
+
+  // Story points
+  let sp = TEAM_BASE_SP
+  if (!selected.has('planning')) sp *= 0.7
+  if (!selected.has('product')) sp -= 4
+  if (!selected.has('design')) sp -= 4
+  if (!selected.has('unblock')) sp -= 6
+  if (selected.has('debtwork')) sp -= 2
+  if (event === 'sick') sp -= 3
+
+  // Incidents
+  const baseIncidents = Math.floor(state.techDebt / 15)
+  const moraleIncident = state.morale < 40 ? 1 : 0
+  let incidentRoll: number
+  ;[incidentRoll, seed] = nextRandom(seed)
+  const rngIncident = incidentRoll < 0.3 ? 1 : 0
+  const stormIncident = event === 'storm' ? 2 : 0
+  const incidents = baseIncidents + moraleIncident + rngIncident + stormIncident
+  const incidentSpCost = selected.has('triage')
+    ? Math.max(0, incidents - 2) * 2
+    : incidents * 2
+  sp -= incidentSpCost
+
+  // Morale multiplier (0.5 to 1.2)
+  const moraleMult = 0.5 + (state.morale / 100) * 0.7
+  sp = Math.max(0, Math.round(sp * moraleMult))
+
+  // Morale delta
+  let moraleDelta = -2 // baseline grind
+  moraleDelta += selected.has('ones') ? 4 : -10
+  if (!selected.has('triage') && incidents > 0) moraleDelta -= 4
+  if (!selected.has('planning')) moraleDelta -= 6
+  if (event === 'offsite') moraleDelta += 6
+  if (event === 'kudos') moraleDelta += 4
+  let moraleJitter: number
+  ;[moraleJitter, seed] = nextInt(seed, -2, 2)
+  moraleDelta += moraleJitter
+
+  // Tech debt delta
+  let techDebtDelta = 5 // baseline growth
+  if (!selected.has('reviews')) techDebtDelta += 8
+  if (selected.has('debtwork')) techDebtDelta -= 8
+
+  const morale = clamp(state.morale + moraleDelta, 0, 100)
+  const techDebt = clamp(state.techDebt + techDebtDelta, 0, 100)
+
+  const result: SprintResult = {
     quarter: state.quarter,
-    score,
-    grade,
-    passed: grade === 'A' || grade === 'B' || grade === 'C',
-    subtasksCompleted: state.subtasksCompletedThisQuarter,
-    incidents: state.incidentsThisQuarter,
-    managerFillSpend: state.managerFillSpendThisQuarter,
+    sprint: state.sprint,
+    event,
+    activities: [...state.selectedActivities],
+    sp,
+    incidents,
+    incidentSpCost,
+    moraleDelta,
+    techDebtDelta,
+    moraleAfter: morale,
+    techDebtAfter: techDebt,
   }
-}
 
-function gradeForScore(score: number): QuarterReviewResult['grade'] {
-  if (score >= GRADE_THRESHOLDS.A) return 'A'
-  if (score >= GRADE_THRESHOLDS.B) return 'B'
-  if (score >= GRADE_THRESHOLDS.C) return 'C'
-  if (score >= GRADE_THRESHOLDS.D) return 'D'
-  return 'F'
-}
-
-// Resolves one sprint boundary: resets the per-sprint manager-time budget
-// and manager-fill flags, advances sprint/quarter counters, and grades the
-// quarter (possibly ending the run) when the last sprint of a quarter closes.
-export function resolveSprintEnd(state: GameState): GameState {
-  let next: GameState = {
+  const resolved: GameState = {
     ...state,
-    managerTimeBudget: state.managerTimeBudgetMax,
-    project: {
-      ...state.project,
-      subtasks: state.project.subtasks.map((t) => ({ ...t, managerFilling: false })),
-    },
-  }
-  next = appendLog(next, `Sprint ${next.sprint} complete.`, 'info')
-
-  if (next.sprint < SPRINTS_PER_QUARTER) {
-    return { ...next, sprint: next.sprint + 1 }
+    morale,
+    techDebt,
+    quarterSp: state.quarterSp + sp,
+    quarterIncidents: state.quarterIncidents + incidents,
+    totalSpRun: state.totalSpRun + sp,
+    sprintHistory: [...state.sprintHistory, result],
+    rngSeed: seed,
   }
 
-  const result = computeQuarterReview(next)
-  next = appendLog(
-    next,
-    `Quarter ${result.quarter} review: grade ${result.grade} (score ${Math.round(result.score)}).`,
-    result.passed ? 'success' : 'danger',
-  )
+  if (state.sprint >= SPRINTS_PER_QUARTER) {
+    // Quarter over: grade it and wait for the player to acknowledge the
+    // review before anything (PIP, promotion, firing) takes effect.
+    const quarterResult = computeQuarterResult(resolved)
+    return {
+      ...resolved,
+      phase: 'quarter-review',
+      currentEvent: null,
+      lastQuarterResult: quarterResult,
+    }
+  }
 
-  const projectFinished = next.project.subtasks.every((t) => t.done)
+  // Advance to the next sprint and roll its event now, so the player sees it
+  // while planning.
+  let nextEvent
+  ;[nextEvent, seed] = rollSprintEvent(seed)
+
+  // DESIGN NOTE: the activity selection carries over between sprints as a
+  // convenience (most sprints look alike). If a CEO-demo event shrinks the
+  // budget below the carried-over cost, the selection resets so the player
+  // re-plans from scratch rather than starting over-budget.
+  const carriedSelection =
+    selectedActivityCost(state.selectedActivities) <= effectiveTimeBudget(nextEvent)
+      ? state.selectedActivities
+      : []
+
   return {
-    ...next,
-    sprint: 1,
-    quarter: next.quarter + 1,
-    lastQuarterResult: result,
-    phase: result.passed ? 'quarter-review' : 'game-over',
-    subtasksCompletedThisQuarter: 0,
-    incidentsThisQuarter: 0,
-    managerFillSpendThisQuarter: 0,
-    project: projectFinished ? createProject(next.quarter + 1) : next.project,
+    ...resolved,
+    sprint: state.sprint + 1,
+    currentEvent: nextEvent,
+    selectedActivities: carriedSelection,
+    rngSeed: seed,
   }
 }

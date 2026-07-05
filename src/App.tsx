@@ -1,13 +1,13 @@
 import { useEffect } from 'react'
-import { startGameLoop } from './game/loop'
 import { loadGame, startAutosave } from './game/save/autosave'
 import { useGameStore } from './game/store'
-import { EventLog } from './ui/EventLog'
-import { PendingEventBanner } from './ui/PendingEventBanner'
-import { ProjectPanel } from './ui/ProjectPanel'
+import { EventBanner } from './ui/EventBanner'
 import { QuarterReviewModal } from './ui/QuarterReviewModal'
+import { RunOverScreen } from './ui/RunOverScreen'
 import { SettingsPanel } from './ui/SettingsPanel'
-import { SprintControls } from './ui/SprintControls'
+import { SprintPlanner } from './ui/SprintPlanner'
+import { SprintResults } from './ui/SprintResults'
+import { StatsHeader } from './ui/StatsHeader'
 import { TeamPanel } from './ui/TeamPanel'
 
 function App() {
@@ -15,27 +15,37 @@ function App() {
   const runNumber = useGameStore((s) => s.runNumber)
 
   useEffect(() => {
-    void loadGame()
-    const stopAutosave = startAutosave()
-    const stopLoop = startGameLoop()
-    return () => {
-      stopAutosave()
-      stopLoop()
-    }
+    let stopAutosave: (() => void) | undefined
+    // Autosave starts only after the saved game has hydrated, so the initial
+    // fresh state can't race in and clobber an existing save.
+    void loadGame().then(() => {
+      stopAutosave = startAutosave()
+    })
+    return () => stopAutosave?.()
   }, [])
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-2xl flex-col items-center gap-6 px-4 py-8">
+    <main className="mx-auto flex min-h-svh max-w-2xl flex-col items-center gap-4 px-4 py-8">
       <h1 className="text-2xl font-semibold">SWE Manager — Run #{runNumber}</h1>
-      <SprintControls />
-      <PendingEventBanner />
-      <div className="grid w-full max-w-md gap-4 md:max-w-none md:grid-cols-2">
-        <TeamPanel />
-        <ProjectPanel />
-      </div>
-      <EventLog />
+
+      {phase === 'run-over' ? (
+        <RunOverScreen />
+      ) : (
+        <>
+          <StatsHeader />
+          <EventBanner />
+          <div className="grid w-full gap-4 md:grid-cols-2">
+            <SprintPlanner />
+            <div className="flex flex-col gap-4">
+              <SprintResults />
+              <TeamPanel />
+            </div>
+          </div>
+        </>
+      )}
+
       <SettingsPanel />
-      {phase !== 'active' && <QuarterReviewModal />}
+      {phase === 'quarter-review' && <QuarterReviewModal />}
     </main>
   )
 }
