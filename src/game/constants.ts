@@ -1,3 +1,26 @@
-// Placeholder balancing constants. Real game mechanics/balance TBD in a
-// follow-up session — this only exists to prove the clicker -> save loop.
-export const CLICK_VALUE = 1
+export const SPRINT_DURATION_MS = 120_000
+export const SPRINTS_PER_QUARTER = 6
+export const TICK_INTERVAL_MS = 250
+export const EVENT_RESOLUTION_INTERVAL_MS = 30_000
+
+export const MANAGER_TIME_PER_SPRINT = 100
+export const MANAGER_FILL_COST = 40
+export const MANAGER_FILL_PROGRESS_RATE = 100 / 480
+export const SENIOR_REFACTOR_APPROVE_COST = 20
+
+export const JUNIOR_PROGRESS_RATE = 100 / 240
+export const SENIOR_PROGRESS_RATE = 100 / 120
+
+export const JUNIOR_BLOCK_CHANCE_PER_BEAT = 0.12
+export const UNBLOCK_HOLD_DURATION_MS = 1_500
+
+export const SENIOR_PROPOSAL_CHANCE_PER_BEAT = 0.08
+export const SENIOR_PROPOSAL_PROGRESS_BONUS = 15
+export const INCIDENT_CHANCE_PER_BEAT = 0.05
+export const INCIDENT_PROGRESS_LOSS = 10
+
+export const OFFLINE_PROGRESS_CAP_MS = SPRINT_DURATION_MS
+export const MAX_SPRINT_RESOLUTIONS_PER_TICK = 3
+export const EVENT_LOG_MAX_ENTRIES = 50
+
+export const GRADE_THRESHOLDS = { A: 85, B: 70, C: 50, D: 30 } as const
